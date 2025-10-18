@@ -210,10 +210,47 @@ def setup_database():
         else:
             print_success("Base de datos mqtt_taller ya existe")
         
-        # Otorgar privilegios
-        print_info("Otorgando privilegios...")
-        grant_cmd = "sudo -u postgres psql -c \"GRANT ALL PRIVILEGES ON DATABASE mqtt_taller TO mqtt_admin;\""
-        run_command(grant_cmd, check=False)
+        # Otorgar privilegios en la base de datos
+        print_info("Otorgando privilegios en la base de datos...")
+        grant_db_cmd = "sudo -u postgres psql -c \"GRANT ALL PRIVILEGES ON DATABASE mqtt_taller TO mqtt_admin;\""
+        run_command(grant_db_cmd, check=False)
+        
+        # Cambiar el dueño de la base de datos
+        print_info("Cambiando propietario de la base de datos...")
+        alter_owner_cmd = "sudo -u postgres psql -c \"ALTER DATABASE mqtt_taller OWNER TO mqtt_admin;\""
+        run_command(alter_owner_cmd, check=False)
+        
+        # Otorgar privilegios en el esquema public
+        print_info("Otorgando privilegios en esquema public...")
+        grant_schema_cmd = "sudo -u postgres psql -d mqtt_taller -c \"GRANT ALL ON SCHEMA public TO mqtt_admin;\""
+        run_command(grant_schema_cmd, check=False)
+        
+        # Cambiar propietario del esquema public
+        alter_schema_cmd = "sudo -u postgres psql -d mqtt_taller -c \"ALTER SCHEMA public OWNER TO mqtt_admin;\""
+        run_command(alter_schema_cmd, check=False)
+        
+        # Otorgar privilegios para crear tablas
+        grant_create_cmd = "sudo -u postgres psql -d mqtt_taller -c \"GRANT CREATE ON SCHEMA public TO mqtt_admin;\""
+        run_command(grant_create_cmd, check=False)
+        
+        # Cambiar propietario de todas las tablas existentes
+        print_info("Cambiando propietario de tablas existentes...")
+        alter_tables_cmd = """sudo -u postgres psql -d mqtt_taller -c "DO \\$\\$ DECLARE r RECORD; BEGIN FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP EXECUTE 'ALTER TABLE ' || quote_ident(r.tablename) || ' OWNER TO mqtt_admin'; END LOOP; END \\$\\$;" """
+        run_command(alter_tables_cmd, check=False)
+        
+        # Cambiar propietario de todas las secuencias existentes
+        alter_sequences_cmd = """sudo -u postgres psql -d mqtt_taller -c "DO \\$\\$ DECLARE r RECORD; BEGIN FOR r IN (SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema = 'public') LOOP EXECUTE 'ALTER SEQUENCE ' || quote_ident(r.sequence_name) || ' OWNER TO mqtt_admin'; END LOOP; END \\$\\$;" """
+        run_command(alter_sequences_cmd, check=False)
+        
+        # Cambiar propietario de todas las vistas existentes
+        alter_views_cmd = """sudo -u postgres psql -d mqtt_taller -c "DO \\$\\$ DECLARE r RECORD; BEGIN FOR r IN (SELECT table_name FROM information_schema.views WHERE table_schema = 'public') LOOP EXECUTE 'ALTER VIEW ' || quote_ident(r.table_name) || ' OWNER TO mqtt_admin'; END LOOP; END \\$\\$;" """
+        run_command(alter_views_cmd, check=False)
+        
+        # Otorgar privilegios en tablas futuras
+        grant_tables_cmd = "sudo -u postgres psql -d mqtt_taller -c \"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO mqtt_admin;\""
+        run_command(grant_tables_cmd, check=False)
+        
+        print_success("Privilegios y propietarios configurados correctamente")
         
         return True
         
@@ -248,12 +285,22 @@ def create_database_schema():
         cursor = conn.cursor()
         
         # Ejecutar el script SQL
-        cursor.execute(sql_content)
-        conn.commit()
+        try:
+            cursor.execute(sql_content)
+            conn.commit()
+            print_success("Esquema de base de datos creado exitosamente")
+        except psycopg2.errors.DuplicateTable as e:
+            print_warning("Las tablas ya existen")
+            conn.rollback()
+        except psycopg2.Error as e:
+            # Si el error es que las tablas ya existen, está bien
+            if "already exists" in str(e):
+                print_warning("El esquema ya existe")
+                conn.rollback()
+            else:
+                raise
         
-        print_success("Esquema de base de datos creado exitosamente")
-        
-        # Verificar que las tablas se crearon
+        # Verificar que las tablas existen
         cursor.execute("""
             SELECT table_name 
             FROM information_schema.tables 
@@ -263,19 +310,26 @@ def create_database_schema():
         
         tables = cursor.fetchall()
         if tables:
-            print_info("Tablas creadas:")
+            print_success(f"Tablas en la base de datos ({len(tables)}):")
             for table in tables:
                 print(f"   • {table[0]}")
+        else:
+            print_warning("No se encontraron tablas en la base de datos")
+            cursor.close()
+            conn.close()
+            return False
         
         cursor.close()
         conn.close()
         return True
         
     except psycopg2.Error as e:
-        print_error(f"Error al crear esquema: {e}")
+        print_error(f"Error de PostgreSQL: {e}")
         return False
     except Exception as e:
         print_error(f"Error inesperado: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def verify_services():

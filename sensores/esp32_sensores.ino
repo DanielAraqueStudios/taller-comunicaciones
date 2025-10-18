@@ -38,15 +38,15 @@
 // ============================================
 // CONFIGURACIÓN WIFI
 // ============================================
-const char* ssid = "TuRedWiFi";           // Cambiar por tu SSID
-const char* password = "TuPassword";       // Cambiar por tu contraseña
+const char* ssid = "THETRUTH 4293";        // Red WiFi
+const char* password = "J1234R000";        // Contraseña WiFi
 
 // ============================================
 // CONFIGURACIÓN MQTT
 // ============================================
-const char* mqtt_server = "192.168.1.100"; // IP del servidor Kali Linux
+const char* mqtt_server = "192.168.137.17"; // IP del servidor Kali Linux
 const int mqtt_port = 1883;
-const char* mqtt_user = "";                // Dejar vacío si allow_anonymous = true
+const char* mqtt_user = "";                  // Dejar vacío si allow_anonymous = true
 const char* mqtt_password = "";
 const char* device_id = "ESP32_01";
 
