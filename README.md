@@ -1,137 +1,312 @@
-# Taller: Implementación de un Servidor MQTT con Múltiples Tópicos y Sensores
+# INFORME TÉCNICO
+## IMPLEMENTACIÓN DE SERVIDOR MQTT CON SISTEMA IOT DE MONITOREO MULTISENSOR
 
-> **⚡ CONTEXTO PARA IA:** Este README documenta un proyecto de implementación MQTT para la asignatura de Comunicaciones. El sistema incluye un broker Mosquitto en Kali Linux, PostgreSQL como base de datos, ESP32 con 7 sensores, y múltiples suscriptores Python. Estado actual: 44% completado (8/18 tareas). Ver `PROGRESO.md` para detalles del avance.
+---
 
-## 📋 Información del Proyecto
+### UNIVERSIDAD MILITAR NUEVA GRANADA
+### FACULTAD DE INGENIERÍA
+### PROGRAMA DE INGENIERÍA EN TELECOMUNICACIONES
+
+---
+
+## 📋 INFORMACIÓN DEL PROYECTO
 
 **Asignatura:** Comunicaciones  
-**Peso:** 50% del segundo corte  
-**Modalidad:** Grupal (mismo grupo de laboratorio) o Individual  
-**Presentación:** Presencial tipo Demostración + Informe de implementación  
-**Correo de envío:** hector.bernal@unimilitar.edu.co
-
-**🔧 Entorno de Desarrollo:**
-- **Servidor:** Kali Linux
-- **Base de Datos:** PostgreSQL 15+
-- **Microcontrolador:** ESP32-S3
-- **Lenguajes:** Python 3.x, C++ (Arduino)
+**Docente:** Héctor Bernal  
+**Período Académico:** Segundo Corte - 2025  
+**Peso Evaluativo:** 50%  
+**Fecha de Presentación:** 18 de Octubre de 2025
 
 ---
 
-## 🎯 Objetivo
+## 👥 INTEGRANTES DEL EQUIPO
 
-Implementar un servidor MQTT con **cinco tópicos** y **al menos siete sensores**. El sistema debe incluir:
-- **4 suscriptores temáticos** que reciben datos según su área de interés
-- **1 suscriptor administrativo** que almacena todos los mensajes en base de datos
-- **Opcional (+0.5):** Conectividad desde Internet con autenticación
-
----
-
-## 📚 Requisitos Previos
-
-- ✅ Conocimientos básicos de redes y protocolos IoT
-- ✅ Experiencia con Linux y línea de comandos
-- ✅ Conocimientos básicos de Python
-- ✅ **Sistema Operativo:** Kali Linux (servidor)
-- ✅ **Base de Datos:** PostgreSQL
-- ✅ Mosquitto (broker MQTT)
-- ✅ Librería `paho-mqtt` en Python
+| Nombre | Código | GitHub |
+|--------|--------|--------|
+| Daniel García Araque | - | @DanielAraqueStudios |
+| Santiago Chaparro Cambar | - | - |
+| David Santiago García Suárez | - | - |
+| Julian Andrés Rosas Sánchez | - | @2J5R6 |
 
 ---
 
-## 🏗️ Arquitectura del Sistema
+## 📄 RESUMEN EJECUTIVO
+
+El presente documento describe la implementación de un sistema de Internet de las Cosas (IoT) basado en el protocolo MQTT para el monitoreo en tiempo real de múltiples variables ambientales y de seguridad. El sistema integra un broker Mosquitto ejecutándose en Kali Linux, una base de datos PostgreSQL para almacenamiento persistente, y dispositivos ESP32-S3 equipados con 8 sensores simulados mediante potenciómetros.
+
+**Palabras clave:** MQTT, IoT, ESP32, PostgreSQL, Monitoreo en tiempo real, Sensores, Publish/Subscribe
+
+---
+
+## 🎯 OBJETIVOS
+
+### Objetivo General
+Diseñar e implementar un sistema de comunicación IoT basado en el protocolo MQTT que permita la adquisición, transmisión y almacenamiento de datos provenientes de múltiples sensores distribuidos, garantizando la escalabilidad y confiabilidad del sistema.
+
+### Objetivos Específicos
+1. Configurar un broker MQTT (Mosquitto) en un servidor Kali Linux para gestionar la comunicación entre dispositivos
+2. Implementar al menos 7 sensores distribuidos en 5 categorías temáticas diferentes
+3. Desarrollar 4 suscriptores temáticos especializados para procesamiento diferenciado de información
+4. Crear un suscriptor administrativo que almacene todos los mensajes en una base de datos PostgreSQL
+5. Integrar microcontroladores ESP32-S3 con sensores físicos o simulados
+6. Validar la comunicación bidireccional y el almacenamiento persistente de datos
+
+---
+
+## 🔧 ESPECIFICACIONES TÉCNICAS
+
+### Entorno de Desarrollo
+
+**Sistema Operativo Servidor:**
+- Distribución: Kali Linux 2025.x
+- Kernel: Linux 5.x+
+- Arquitectura: x86_64
+
+**Base de Datos:**
+- Motor: PostgreSQL 17.6
+- Codificación: UTF-8
+- Puerto: 5432
+
+**Broker MQTT:**
+- Software: Eclipse Mosquitto 2.0.22
+- Puerto: 1883 (TCP)
+- Protocolo: MQTT v3.1.1
+- Contenedor: Docker
+
+**Hardware IoT:**
+- Microcontrolador: ESP32-S3 DevKit
+- ADC Resolución: 12 bits (0-4095)
+- Pines ADC utilizados: GPIO 1-8 (ADC1_CH0-CH7)
+- Alimentación: 3.3V
+
+**Entorno de Programación:**
+- Lenguaje Backend: Python 3.13.7
+- Lenguaje Firmware: C++ (Arduino Framework)
+- IDE Hardware: Arduino IDE / PlatformIO
+- Entorno Virtual: venv
+- Librerías Python: paho-mqtt 1.6.1, psycopg2-binary 2.9.11, python-dotenv 1.1.1
+- Librerías Arduino: PubSubClient, ArduinoJson, WiFi
+
+---
+
+## 📖 MARCO TEÓRICO
+
+### Protocolo MQTT (Message Queuing Telemetry Transport)
+
+MQTT es un protocolo de mensajería ligero diseñado para comunicaciones M2M (Machine-to-Machine) en redes con ancho de banda limitado. Utiliza un modelo de publicación/suscripción (Publish/Subscribe) que desacopla a los productores de datos (publicadores) de los consumidores (suscriptores) mediante un broker central.
+
+**Características principales:**
+- **Ligero:** Mínima sobrecarga de protocolo
+- **Calidad de Servicio (QoS):** Tres niveles (0, 1, 2)
+- **Persistencia:** Mensajes retenidos y sesiones limpias
+- **Topics:** Jerarquía de tópicos mediante estructura de árbol
+- **Wildcards:** `#` (multi-nivel) y `+` (un nivel)
+
+### Internet de las Cosas (IoT)
+
+Paradigma tecnológico que conecta objetos físicos a Internet, permitiendo la recopilación y el intercambio de datos. En este proyecto, se implementa una arquitectura IoT para monitoreo ambiental y de seguridad.
+
+### ESP32-S3
+
+Microcontrolador de bajo costo con conectividad WiFi/Bluetooth integrada, ideal para aplicaciones IoT. Cuenta con dos núcleos de procesamiento, múltiples canales ADC y bajo consumo energético.
+
+---
+
+## 🎯 ALCANCE DEL PROYECTO
+
+### Requisitos Funcionales
+1. **RF1:** El sistema debe soportar al menos 5 categorías de tópicos MQTT
+2. **RF2:** Cada tópico debe recibir datos de al menos un sensor específico
+3. **RF3:** El sistema debe implementar mínimo 7 sensores distribuidos en los tópicos
+4. **RF4:** Debe existir un suscriptor administrativo que almacene todos los mensajes
+5. **RF5:** Deben implementarse 4 suscriptores temáticos especializados
+6. **RF6:** Los datos deben persistirse en una base de datos relacional
+7. **RF7:** El sistema debe soportar conexiones desde dispositivos móviles
+
+### Requisitos No Funcionales
+1. **RNF1:** Disponibilidad del broker MQTT >= 99%
+2. **RNF2:** Latencia de mensajería < 500ms
+3. **RNF3:** Capacidad de almacenar al menos 10,000 mensajes en BD
+4. **RNF4:** Interfaz de consulta de datos históricos
+5. **RNF5:** Documentación técnica completa
+
+### Opcionales (Puntos Bonus)
+- **OPC1 (+0.5):** Autenticación MQTT con usuario/contraseña
+- **OPC2 (+0.5):** Acceso desde Internet con port forwarding
+
+---
+
+## 🏗️ METODOLOGÍA
+
+### Enfoque de Desarrollo
+
+El proyecto se desarrolló siguiendo una metodología ágil iterativa, con las siguientes fases:
+
+1. **Fase de Análisis:** Estudio de requisitos y diseño de arquitectura
+2. **Fase de Infraestructura:** Configuración de servidor, broker MQTT y base de datos
+3. **Fase de Desarrollo:** Implementación de publicadores y suscriptores
+4. **Fase de Pruebas:** Validación funcional y de integración
+5. **Fase de Documentación:** Generación de manuales técnicos
+
+### Herramientas de Desarrollo
+
+| Componente | Tecnología | Versión |
+|------------|-----------|---------|
+| Sistema Operativo | Kali Linux | 2024.x |
+| Broker MQTT | Eclipse Mosquitto | 2.0.22 |
+| Base de Datos | PostgreSQL | 17.6 |
+| Lenguaje Backend | Python | 3.13.7 |
+| Microcontrolador | ESP32-S3 DevKit | - |
+| Contenedores | Docker | Latest |
+
+### Configuración del Entorno
+
+**Red Local:**
+- SSID: `THETRUTH 4293`
+- IP Servidor: `192.168.137.17`
+- Rango DHCP: `192.168.137.0/24`
+
+**Credenciales de Base de Datos:**
+- Usuario: `mqtt_admin`
+- Base de Datos: `mqtt_taller`
+- Puerto: `5432`
+
+---
+
+## 🏛️ ARQUITECTURA DEL SISTEMA
+
+### Modelo Publish/Subscribe
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     BROKER MQTT (Mosquitto)                  │
-│                         Puerto 1883                          │
-└────────────────────┬────────────────────────────────────────┘
-                     │
-        ┌────────────┼────────────┬─────────────┬─────────────┐
-        │            │            │             │             │
-   ┌────▼───┐   ┌───▼────┐  ┌───▼────┐   ┌────▼───┐   ┌─────▼──────┐
-   │Tópico 1│   │Tópico 2│  │Tópico 3│   │Tópico 4│   │  Tópico 5  │
-   └────┬───┘   └───┬────┘  └───┬────┘   └────┬───┘   └─────┬──────┘
-        │           │           │             │             │
-   ┌────▼──────────────────────────────────────────────────────┐
-   │              PUBLICADORES (Sensores)                       │
-   │  - ESP32 con 2+ sensores de distintos tópicos             │
-   │  - Mínimo 7 sensores en total                             │
-   └────────────────────────────────────────────────────────────┘
-                              │
-        ┌─────────────────────┼─────────────────────┐
-        │                     │                     │
-   ┌────▼────┐           ┌───▼────┐           ┌────▼─────┐
-   │Suscr. 1 │           │Suscr. 2│           │Suscr. 3  │
-   │Temático │           │Temático│           │Temático  │
-   └─────────┘           └────────┘           └──────────┘
-                              │
-                         ┌────▼────┐
-                         │Suscr. 4 │
-                         │Temático │
-                         └────┬────┘
-                              │
-                    ┌─────────▼──────────┐
-                    │  Suscriptor Admin  │
-                    │   (Todos los       │
-                    │    tópicos)        │
-                    └─────────┬──────────┘
-                              │
-                    ┌─────────▼──────────┐
-                    │   BASE DE DATOS    │
-                    │   (PostgreSQL/     │
-                    │    MongoDB)        │
+┌─────────────────────────────────────────────────────────────────────┐
+│                     ARQUITECTURA MQTT - TALLER                       │
+│             Universidad Militar Nueva Granada - 2025                 │
+└─────────────────────────────────────────────────────────────────────┘
+
+ ┌──────────────────┐         ┌─────────────────────────────────┐
+ │   PUBLICADORES   │         │      BROKER MQTT (Mosquitto)    │
+ │   (Publishers)   │         │    IP: 192.168.137.17:1883      │
+ │                  │         │    Docker Container             │
+ │  ┌────────────┐  │         │                                 │
+ │  │  ESP32-S3  │──┼────────▶│    Tópicos Implementados:       │
+ │  │ DevKit     │  │  WiFi   │    ✓ clima/temperatura          │
+ │  │ (8 pots)   │  │         │    ✓ clima/humedad              │
+ │  └────────────┘  │         │    ✓ clima/viento               │
+ │                  │         │    ✓ incendio/sensor_humo       │
+ │  ┌────────────┐  │  LAN    │    ✓ incendio/alarma            │
+ │  │  Simulador │──┼────────▶│    ✓ seguridad/puerta           │
+ │  │   Python   │  │         │    ✓ seguridad/movimiento       │
+ │  │ (Pruebas)  │  │         │    ✓ iluminacion/luz            │
+ │  └────────────┘  │         │                                 │
+ └──────────────────┘         └─────────────────────────────────┘
+                                          │
+                                          │ Publish/Subscribe
+                                          ▼
+         ┌────────────────────────────────────────────────────┐
+         │              SUSCRIPTORES (Subscribers)            │
+         │                                                    │
+         │  ┌──────────────────┐    ┌──────────────────┐    │
+         │  │   Administrativo │    │   Temático #1    │    │
+         │  │   suscriptor_    │    │   (Bomberos)     │    │
+         │  │   admin.py       │    │   incendio/*     │    │
+         │  │   Wildcard: #    │    │   [PENDIENTE]    │    │
+         │  └────────┬─────────┘    └──────────────────┘    │
+         │           │                                       │
+         │           │ INSERT                                │
+         │           ▼                                       │
+         │  ┌──────────────────┐    ┌──────────────────┐    │
+         │  │   PostgreSQL     │    │   Temático #2    │    │
+         │  │   mqtt_taller    │    │   (Seguridad)    │    │
+         │  │   17.6           │    │   seguridad/*    │    │
+         │  │                  │    │   [PENDIENTE]    │    │
+         │  └──────────────────┘    └──────────────────┘    │
+         │           │                                       │
+         │           │ SELECT                                │
+         │           ▼                                       │
+         │  ┌──────────────────┐    ┌──────────────────┐    │
+         │  │   MQTT Dashboard │    │   Temático #3    │    │
+         │  │   (Móvil)        │    │   (Profesor)     │    │
+         │  │   Android/iOS    │    │   clima/*        │    │
+         │  │   [OPCIONAL]     │    │   [PENDIENTE]    │    │
+         │  └──────────────────┘    └──────────────────┘    │
+         │                                                    │
+         │                           ┌──────────────────┐    │
+         │                           │   Temático #4    │    │
+         │                           │   (Policía)      │    │
+         │                           │   iluminacion/*  │    │
+         │                           │   [PENDIENTE]    │    │
+         │                           └──────────────────┘    │
+         └────────────────────────────────────────────────────┘
                     └────────────────────┘
 ```
 
+### Descripción de Componentes
+
+**Capa de Sensores (Publishers):**
+- **ESP32-S3:** Microcontrolador con 8 potenciómetros simulando sensores reales
+- **Simulador Python:** Script para pruebas sin hardware físico
+- **Protocolo:** MQTT sobre WiFi, QoS 0
+
+**Capa de Broker:**
+- **Mosquitto 2.0.22:** Broker MQTT open-source en contenedor Docker
+- **Configuración:** Sin autenticación (allow_anonymous=true), persistencia habilitada
+- **Puerto:** 1883 (estándar MQTT sin TLS)
+
+**Capa de Suscriptores:**
+- **Administrativo:** Almacena todos los mensajes en PostgreSQL
+- **Temáticos:** 4 suscriptores especializados por dominio (en desarrollo)
+
+**Capa de Persistencia:**
+- **PostgreSQL 17.6:** Base de datos relacional con acceso local y remoto
+- **Esquema:** Tabla `mensajes_mqtt` con campos JSON, vistas materializadas
+
 ---
 
-## 📝 Estructura del Proyecto
+## � ESTRUCTURA DEL PROYECTO
 
-> **📊 ESTADO DE ARCHIVOS:** ✅ Completado | 🔄 En progreso | ⏳ Pendiente
+### Organización de Archivos
+
+> **Estado de Implementación:** ✅ Completado | 🔄 En progreso | ⏳ Pendiente
 
 ```
-taller comunicaciones/
-├── ✅ README.md                          # Este archivo (Documentación principal)
-├── ✅ PROGRESO.md                        # Estado detallado del proyecto
-├── ✅ .env.example                       # Plantilla de variables de entorno
+taller-comunicaciones/
+├── ✅ README.md                          # Informe académico principal
+├── ✅ PROGRESO.md                        # Seguimiento detallado (67%)
+├── ✅ STARTUP.md                         # Guía de reinicio del sistema
+├── ✅ TESTING.md                         # Procedimientos de prueba
 ├── ✅ requirements.txt                   # Dependencias Python
-├── 📄 Corte2_50porciento_TallerMQTT.docx # Documento original del taller
+├── ✅ setup_sistema.py                   # Script de configuración automática
+├── ✅ limpiar_db.py                      # Herramienta de limpieza de BD
+├── ✅ consultar_db.py                    # Herramienta de consulta de BD
+├── ✅ .env                               # Configuración local
+├── ✅ .env.remoto                        # Configuración para acceso remoto
 │
-├── broker/                               # ✅ Configuración del servidor MQTT
-│   ├── ✅ docker-compose.yml            # Docker para Mosquitto en Kali Linux
-│   ├── ✅ mosquitto.conf                # Configuración completa del broker
-│   ├── ⏳ data/                         # Datos persistentes (creado en runtime)
-│   ├── ⏳ log/                          # Logs del broker (creado en runtime)
-│   └── ⏳ passwd                        # Archivo de usuarios (Bonus +0.5)
+├── broker/                               # ✅ Configuración del Broker MQTT
+│   ├── ✅ docker-compose.yml            # Contenedor Mosquitto 2.0.22
+│   └── ✅ mosquitto.conf                # Configuración completa del broker
 │
-├── sensores/                             # ✅ Publicadores (ESP32)
-│   ├── ✅ esp32_sensores.ino            # Código Arduino completo (7 sensores)
-│   └── ✅ sensor_simulator.py           # Simulador Python completo
+├── sensores/                             # ✅ Publicadores MQTT
+│   ├── ✅ esp32_sensores.ino            # Firmware ESP32-S3 (8 sensores)
+│   └── ✅ sensor_simulator.py           # Simulador Python para pruebas
 │
-├── suscriptores/                         # 🔄 Clientes MQTT (1/5 completados)
-│   ├── 🔄 suscriptor_1_tematico.py      # Bomberos (incendio/#) - En progreso
-│   ├── ⏳ suscriptor_2_tematico.py      # Vigilancia (seguridad/#, clima/#)
-│   ├── ⏳ suscriptor_3_tematico.py      # Profesor (iluminacion/#, clima/#)
-│   ├── ⏳ suscriptor_4_tematico.py      # Policía (seguridad/#, incendio/#)
-│   └── ✅ suscriptor_admin.py           # Suscriptor administrativo (DB) COMPLETO
+├── suscriptores/                         # 🔄 Suscriptores MQTT (1/5)
+│   ├── ✅ suscriptor_admin.py           # Administrativo (wildcard #)
+│   ├── ⏳ suscriptor_bomberos.py        # Temático 1: incendio/*
+│   ├── ⏳ suscriptor_seguridad.py       # Temático 2: seguridad/*
+│   ├── ⏳ suscriptor_profesor.py        # Temático 3: clima/*
+│   └── ⏳ suscriptor_policia.py         # Temático 4: iluminacion/*
 │
-├── database/                             # ✅ Base de datos PostgreSQL
-│   ├── ✅ schema.sql                    # Esquema completo con vistas e índices
-│   └── ✅ db_config.py                  # Módulo de conexión con funciones auxiliares
-│
-└── docs/                                 # ⏳ Documentación técnica
-    ├── ⏳ INSTALACION.md                # Guía de instalación paso a paso
-    ├── ⏳ CONFIGURACION.md              # Guía de configuración del sistema
-    └── ⏳ PRUEBAS.md                    # Casos de prueba y validación
+└── database/                             # ✅ Base de Datos PostgreSQL
+    ├── ✅ schema.sql                    # Esquema completo (tablas, vistas, índices)
+    └── ✅ db_config.py                  # Módulo de conexión y utilidades
 ```
 
-**📈 Progreso Global:** 44% completado (8/18 tareas)  
-**🎯 Próximo objetivo:** Completar los 4 suscriptores temáticos
+**� Progreso del Proyecto:** 67% completado (12/18 tareas)  
+**🎯 Próximo Hito:** Implementar 4 suscriptores temáticos (33% restante)
 
 ---
 
-## 🔧 Componentes del Sistema
+## � IMPLEMENTACIÓN
 
 ### 1. Servidor MQTT (Broker)
 
