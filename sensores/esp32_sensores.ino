@@ -1,27 +1,38 @@
 /*
  * ============================================
- * ESP32 - SENSORES MQTT
+ * ESP32-S3 - SENSORES MQTT CON POTENCIÓMETROS
  * Taller Comunicaciones - Universidad Militar Nueva Granada
  * ============================================
  * 
- * Este código implementa un sistema de sensores en ESP32 que publica
- * datos a un broker MQTT en diferentes tópicos.
+ * Este código implementa un sistema de sensores simulados con 
+ * POTENCIÓMETROS en ESP32-S3 que publica datos a un broker MQTT.
  * 
- * SENSORES IMPLEMENTADOS (mínimo 7):
- * 1. Sensor de humo (MQ-2) -> incendio/sensor_humo
- * 2. Botón alarma manual -> incendio/alarma
- * 3. Sensor de puerta (Reed Switch) -> seguridad/puerta
- * 4. DHT11 (Temperatura) -> clima/temperatura
- * 5. DHT11 (Humedad) -> clima/humedad
- * 6. LDR (Luz solar) -> iluminacion/luz
- * 7. Sensor de movimiento (PIR) -> seguridad/movimiento
+ * FORMATO JSON (compatible con suscriptor_admin.py):
+ * {
+ *   "device_id": "ESP32_01",
+ *   "value": 25.5,
+ *   "unit": "°C",
+ *   "status": "normal",    (opcional)
+ *   "timestamp": 12345
+ * }
  * 
+ * POTENCIÓMETROS IMPLEMENTADOS (8 sensores):
+ * 1. GPIO 1 (ADC1_CH0) -> Temperatura (0-50°C) -> clima/temperatura
+ * 2. GPIO 2 (ADC1_CH1) -> Humedad (0-100%) -> clima/humedad
+ * 3. GPIO 3 (ADC1_CH2) -> Humo (0-100%) -> incendio/sensor_humo
+ * 4. GPIO 4 (ADC1_CH3) -> Luz (0-100%) -> iluminacion/luz
+ * 5. GPIO 5 (ADC1_CH4) -> Movimiento (digital simulado) -> seguridad/movimiento
+ * 6. GPIO 6 (ADC1_CH5) -> Puerta (digital simulado) -> seguridad/puerta
+ * 7. GPIO 7 (ADC1_CH6) -> Alarma (>80% activa) -> incendio/alarma
+ * 8. GPIO 8 (ADC1_CH7) -> Viento (0-100 km/h) -> clima/viento
+ * 
+ * HARDWARE: ESP32-S3 DevKit
+ * ADC Resolución: 12 bits (0-4095)
  * ============================================
  */
 
 #include <WiFi.h>
 #include <PubSubClient.h>
-#include <DHT.h>
 #include <ArduinoJson.h>
 
 // ============================================
@@ -40,27 +51,33 @@ const char* mqtt_password = "";
 const char* device_id = "ESP32_01";
 
 // ============================================
-// PINES DE SENSORES
+// PINES DE SENSORES - ESP32-S3 (POTENCIÓMETROS)
 // ============================================
-#define DHT_PIN 11              // DHT11 (Temperatura y Humedad)
-#define DHT_TYPE DHT11
-#define MQ2_PIN 34              // Sensor de humo MQ-2 (Analógico)
-#define LDR_PIN 35              // LDR - Sensor de luz (Analógico)
-#define PIR_PIN 13              // Sensor de movimiento PIR
-#define REED_PIN 14             // Sensor de puerta (Reed Switch)
-#define ALARM_BUTTON_PIN 12     // Botón de alarma manual
-#define LED_STATUS 2            // LED integrado para estado
+// IMPORTANTE: ESP32-S3 tiene ADC1 (GPIO 1-10) y ADC2 (GPIO 11-20)
+// Usamos ADC1 para evitar conflictos con WiFi
+
+#define TEMP_POT_PIN 1          // ADC1_CH0 - Potenciómetro Temperatura (0-100°C)
+#define HUM_POT_PIN 2           // ADC1_CH1 - Potenciómetro Humedad (0-100%)
+#define HUMO_POT_PIN 3          // ADC1_CH2 - Potenciómetro Humo (0-100%)
+#define LUZ_POT_PIN 4           // ADC1_CH3 - Potenciómetro Luz (0-100%)
+#define MOV_POT_PIN 5           // ADC1_CH4 - Potenciómetro Movimiento (0=no, >50%=sí)
+#define PUERTA_POT_PIN 6        // ADC1_CH5 - Potenciómetro Puerta (0=cerrada, >50%=abierta)
+#define ALARMA_POT_PIN 7        // ADC1_CH6 - Potenciómetro Alarma (>80%=activada)
+#define VIENTO_POT_PIN 8        // ADC1_CH7 - Potenciómetro Viento (0-100 km/h) - OPCIONAL
+
+#define LED_STATUS 48           // LED RGB integrado en ESP32-S3
 
 // ============================================
 // TÓPICOS MQTT
 // ============================================
+const char* TOPIC_TEMPERATURA = "clima/temperatura";
+const char* TOPIC_HUMEDAD = "clima/humedad";
+const char* TOPIC_VIENTO = "clima/viento";
 const char* TOPIC_HUMO = "incendio/sensor_humo";
 const char* TOPIC_ALARMA = "incendio/alarma";
 const char* TOPIC_PUERTA = "seguridad/puerta";
-const char* TOPIC_TEMPERATURA = "clima/temperatura";
-const char* TOPIC_HUMEDAD = "clima/humedad";
-const char* TOPIC_LUZ = "iluminacion/luz";
 const char* TOPIC_MOVIMIENTO = "seguridad/movimiento";
+const char* TOPIC_LUZ = "iluminacion/luz";
 const char* TOPIC_STATUS = "sistema/estado";
 
 // ============================================
@@ -68,7 +85,6 @@ const char* TOPIC_STATUS = "sistema/estado";
 // ============================================
 WiFiClient espClient;
 PubSubClient client(espClient);
-DHT dht(DHT_PIN, DHT_TYPE);
 
 // ============================================
 // VARIABLES GLOBALES
@@ -78,9 +94,8 @@ unsigned long lastStatusMsg = 0;
 const long interval = 5000;        // Intervalo de publicación (5 segundos)
 const long statusInterval = 30000; // Intervalo de estado (30 segundos)
 
-bool lastPirState = false;
-bool lastReedState = false;
-bool lastAlarmState = false;
+// Resolución ADC del ESP32-S3: 12 bits (0-4095)
+const int ADC_RESOLUTION = 4095;
 
 // ============================================
 // CONFIGURACIÓN INICIAL
@@ -92,17 +107,20 @@ void setup() {
   Serial.println("Universidad Militar Nueva Granada");
   Serial.println("============================================\n");
 
-  // Configurar pines
-  pinMode(PIR_PIN, INPUT);
-  pinMode(REED_PIN, INPUT_PULLUP);
-  pinMode(ALARM_BUTTON_PIN, INPUT_PULLUP);
+  // Configurar pines ADC (potenciómetros)
+  pinMode(TEMP_POT_PIN, INPUT);
+  pinMode(HUM_POT_PIN, INPUT);
+  pinMode(HUMO_POT_PIN, INPUT);
+  pinMode(LUZ_POT_PIN, INPUT);
+  pinMode(MOV_POT_PIN, INPUT);
+  pinMode(PUERTA_POT_PIN, INPUT);
+  pinMode(ALARMA_POT_PIN, INPUT);
+  pinMode(VIENTO_POT_PIN, INPUT);
   pinMode(LED_STATUS, OUTPUT);
-  pinMode(MQ2_PIN, INPUT);
-  pinMode(LDR_PIN, INPUT);
 
-  // Inicializar DHT
-  dht.begin();
-  Serial.println("✅ DHT11 inicializado");
+  // Configurar resolución ADC (12 bits = 0-4095)
+  analogReadResolution(12);
+  Serial.println("✅ Pines ADC configurados (8 potenciómetros)");
 
   // Conectar WiFi
   setup_wifi();
@@ -196,14 +214,18 @@ void reconnect() {
 void publishSensor(const char* topic, const char* tipo, float valor, const char* unidad, const char* estado = "") {
   StaticJsonDocument<256> doc;
   
-  doc["sensor_id"] = device_id;
-  doc["tipo"] = tipo;
-  doc["valor"] = valor;
-  doc["unidad"] = unidad;
+  // Formato compatible con el simulador y suscriptor_admin.py
+  doc["device_id"] = device_id;  // Cambio: sensor_id -> device_id
+  doc["value"] = valor;           // Cambio: valor -> value
+  doc["unit"] = unidad;           // Cambio: unidad -> unit
+  
   if (strlen(estado) > 0) {
-    doc["estado"] = estado;
+    doc["status"] = estado;       // Cambio: estado -> status
   }
-  doc["timestamp"] = millis();
+  
+  // Timestamp en formato epoch Unix (segundos desde 1970)
+  // Nota: Para timestamp ISO 8601 necesitarías RTC o NTP
+  doc["timestamp"] = millis() / 1000;  // Convertir a segundos
   
   char buffer[256];
   serializeJson(doc, buffer);
@@ -239,59 +261,66 @@ void publishStatus(const char* estado) {
 }
 
 // ============================================
-// LEER SENSORES
+// LEER POTENCIÓMETROS Y CONVERTIR A VALORES
 // ============================================
 void readSensors() {
-  // 1. Sensor DHT11 - Temperatura
-  float temp = dht.readTemperature();
-  if (!isnan(temp)) {
-    publishSensor(TOPIC_TEMPERATURA, "temperatura", temp, "°C");
+  int adcValue;
+  float mappedValue;
+
+  // 1. Potenciómetro Temperatura (0-50°C)
+  adcValue = analogRead(TEMP_POT_PIN);
+  mappedValue = map(adcValue, 0, ADC_RESOLUTION, 0, 5000) / 100.0; // 0.0 - 50.0°C
+  publishSensor(TOPIC_TEMPERATURA, "temperatura", mappedValue, "°C");
+  delay(50);
+
+  // 2. Potenciómetro Humedad (0-100%)
+  adcValue = analogRead(HUM_POT_PIN);
+  mappedValue = map(adcValue, 0, ADC_RESOLUTION, 0, 10000) / 100.0; // 0.0 - 100.0%
+  publishSensor(TOPIC_HUMEDAD, "humedad", mappedValue, "%");
+  delay(50);
+
+  // 3. Potenciómetro Humo (0-100%)
+  adcValue = analogRead(HUMO_POT_PIN);
+  mappedValue = map(adcValue, 0, ADC_RESOLUTION, 0, 10000) / 100.0; // 0.0 - 100.0%
+  const char* humoStatus = (mappedValue > 50) ? "alerta" : "normal";
+  publishSensor(TOPIC_HUMO, "humo", mappedValue, "%", humoStatus);
+  delay(50);
+
+  // 4. Potenciómetro Luz (0-100%)
+  adcValue = analogRead(LUZ_POT_PIN);
+  mappedValue = map(adcValue, 0, ADC_RESOLUTION, 0, 10000) / 100.0; // 0.0 - 100.0%
+  publishSensor(TOPIC_LUZ, "luz", mappedValue, "%");
+  delay(50);
+
+  // 5. Potenciómetro Movimiento (digital simulado: <50% = 0, >=50% = 1)
+  adcValue = analogRead(MOV_POT_PIN);
+  mappedValue = map(adcValue, 0, ADC_RESOLUTION, 0, 100);
+  bool movDetectado = (mappedValue >= 50);
+  const char* movStatus = movDetectado ? "detectado" : "sin_movimiento";
+  publishSensor(TOPIC_MOVIMIENTO, "movimiento", movDetectado ? 1.0 : 0.0, "", movStatus);
+  delay(50);
+
+  // 6. Potenciómetro Puerta (digital simulado: <50% = cerrada, >=50% = abierta)
+  adcValue = analogRead(PUERTA_POT_PIN);
+  mappedValue = map(adcValue, 0, ADC_RESOLUTION, 0, 100);
+  bool puertaAbierta = (mappedValue >= 50);
+  const char* puertaStatus = puertaAbierta ? "abierta" : "cerrada";
+  publishSensor(TOPIC_PUERTA, "puerta", puertaAbierta ? 1.0 : 0.0, "", puertaStatus);
+  delay(50);
+
+  // 7. Potenciómetro Alarma (>80% = activada)
+  adcValue = analogRead(ALARMA_POT_PIN);
+  mappedValue = map(adcValue, 0, ADC_RESOLUTION, 0, 100);
+  if (mappedValue > 80) {
+    publishSensor(TOPIC_ALARMA, "alarma_manual", 1.0, "", "activada");
   }
+  delay(50);
 
-  delay(100);
-
-  // 2. Sensor DHT11 - Humedad
-  float hum = dht.readHumidity();
-  if (!isnan(hum)) {
-    publishSensor(TOPIC_HUMEDAD, "humedad", hum, "%");
-  }
-
-  delay(100);
-
-  // 3. Sensor MQ-2 - Humo
-  int smokeValue = analogRead(MQ2_PIN);
-  float smokePercent = map(smokeValue, 0, 4095, 0, 100);
-  publishSensor(TOPIC_HUMO, "humo", smokePercent, "%", smokePercent > 50 ? "alerta" : "normal");
-
-  delay(100);
-
-  // 4. Sensor LDR - Luz
-  int ldrValue = analogRead(LDR_PIN);
-  float luzPercent = map(ldrValue, 0, 4095, 0, 100);
-  publishSensor(TOPIC_LUZ, "luz", luzPercent, "%");
-
-  delay(100);
-
-  // 5. Sensor PIR - Movimiento (solo si hay cambio)
-  bool pirState = digitalRead(PIR_PIN);
-  if (pirState != lastPirState) {
-    publishSensor(TOPIC_MOVIMIENTO, "movimiento", pirState ? 1 : 0, "", pirState ? "detectado" : "sin_movimiento");
-    lastPirState = pirState;
-  }
-
-  // 6. Sensor Reed - Puerta (solo si hay cambio)
-  bool reedState = digitalRead(REED_PIN);
-  if (reedState != lastReedState) {
-    publishSensor(TOPIC_PUERTA, "puerta", reedState ? 1 : 0, "", reedState ? "abierta" : "cerrada");
-    lastReedState = reedState;
-  }
-
-  // 7. Botón Alarma (solo si se presiona)
-  bool alarmState = !digitalRead(ALARM_BUTTON_PIN); // Lógica invertida (pull-up)
-  if (alarmState != lastAlarmState && alarmState) {
-    publishSensor(TOPIC_ALARMA, "alarma_manual", 1, "", "activada");
-  }
-  lastAlarmState = alarmState;
+  // 8. Potenciómetro Viento (0-100 km/h) - OPCIONAL
+  adcValue = analogRead(VIENTO_POT_PIN);
+  mappedValue = map(adcValue, 0, ADC_RESOLUTION, 0, 10000) / 100.0; // 0.0 - 100.0 km/h
+  publishSensor(TOPIC_VIENTO, "viento", mappedValue, "km/h");
+  delay(50);
 }
 
 // ============================================
@@ -320,47 +349,65 @@ void loop() {
 }
 
 // ============================================
-// NOTAS DE IMPLEMENTACIÓN
+// NOTAS DE IMPLEMENTACIÓN - POTENCIÓMETROS
 // ============================================
 /*
- * CONEXIONES FÍSICAS:
+ * CONEXIONES FÍSICAS DE POTENCIÓMETROS (10kΩ recomendado):
  * 
- * DHT11:
- *   - VCC -> 3.3V
- *   - DATA -> GPIO 11
- *   - GND -> GND
+ * Cada potenciómetro se conecta así:
+ *   - Terminal 1 -> 3.3V
+ *   - Terminal 2 (wiper/central) -> GPIO ADC correspondiente
+ *   - Terminal 3 -> GND
  * 
- * MQ-2 (Sensor de Humo):
- *   - VCC -> 5V
- *   - AO -> GPIO 34
- *   - GND -> GND
+ * DISTRIBUCIÓN DE POTENCIÓMETROS:
  * 
- * LDR (Fotoresistor):
- *   - Un terminal -> 3.3V
- *   - Otro terminal -> GPIO 35 + Resistencia 10kΩ a GND
+ * POT 1 (GPIO 1) - Temperatura:
+ *   Rango: 0-50°C
+ *   Girar para simular cambios de temperatura
  * 
- * PIR (HC-SR501):
- *   - VCC -> 5V
- *   - OUT -> GPIO 13
- *   - GND -> GND
+ * POT 2 (GPIO 2) - Humedad:
+ *   Rango: 0-100%
+ *   Girar para simular cambios de humedad
  * 
- * Reed Switch:
- *   - Un terminal -> GPIO 14
- *   - Otro terminal -> GND
- *   - (Usar INPUT_PULLUP interno)
+ * POT 3 (GPIO 3) - Humo:
+ *   Rango: 0-100%
+ *   >50% = Estado "alerta"
  * 
- * Botón Alarma:
- *   - Un terminal -> GPIO 12
- *   - Otro terminal -> GND
- *   - (Usar INPUT_PULLUP interno)
+ * POT 4 (GPIO 4) - Luz:
+ *   Rango: 0-100%
+ *   Girar para simular día/noche
  * 
- * LIBRERÍAS NECESARIAS:
+ * POT 5 (GPIO 5) - Movimiento:
+ *   <50% = Sin movimiento (0)
+ *   >=50% = Movimiento detectado (1)
+ * 
+ * POT 6 (GPIO 6) - Puerta:
+ *   <50% = Cerrada (0)
+ *   >=50% = Abierta (1)
+ * 
+ * POT 7 (GPIO 7) - Alarma:
+ *   <80% = Desactivada
+ *   >80% = ALARMA ACTIVADA
+ * 
+ * POT 8 (GPIO 8) - Viento:
+ *   Rango: 0-100 km/h
+ *   Girar para simular velocidad del viento
+ * 
+ * LIBRERÍAS NECESARIAS (Arduino IDE):
  *   - PubSubClient by Nick O'Leary
- *   - DHT sensor library by Adafruit
  *   - ArduinoJson by Benoit Blanchon
+ *   - WiFi (incluida con ESP32)
  * 
  * CONFIGURACIÓN ANTES DE CARGAR:
- *   1. Modificar ssid y password
- *   2. Modificar mqtt_server con IP del servidor Kali
- *   3. Verificar pines según tu conexión física
+ *   1. Seleccionar placa: "ESP32S3 Dev Module"
+ *   2. Modificar ssid y password (líneas 40-41)
+ *   3. Modificar mqtt_server con IP del servidor Kali (línea 47)
+ *   4. Conectar 8 potenciómetros a los pines GPIO 1-8
+ *   5. Cargar el código
+ * 
+ * VENTAJAS DE USAR POTENCIÓMETROS:
+ *   ✅ No necesitas sensores reales (más económico)
+ *   ✅ Control manual de valores para pruebas
+ *   ✅ Simula cualquier rango de valores
+ *   ✅ Ideal para demostraciones y desarrollo
  */
